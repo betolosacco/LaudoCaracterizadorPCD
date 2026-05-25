@@ -2201,6 +2201,67 @@ html body .def-grid .def-box > .def-box-title:has(> input[type="checkbox"]:check
   body > #print-root{display:block!important;}
 }
 
+
+
+/* PATCH DEFINITIVO GitHub v36 — impressão: Nome/CPF sem duplicação e Origem visivelmente marcada */
+@media print{
+  #print-root .print-hide-field{
+    display:none!important;
+    visibility:hidden!important;
+    height:0!important;
+    min-height:0!important;
+    max-height:0!important;
+    padding:0!important;
+    margin:0!important;
+    border:0!important;
+    outline:0!important;
+    box-shadow:none!important;
+    opacity:0!important;
+  }
+  #print-root .finput-print{
+    display:block!important;
+    visibility:visible!important;
+    font-family:Arial,Helvetica,sans-serif!important;
+    font-size:9.5pt!important;
+    font-weight:700!important;
+    color:#000!important;
+    border-bottom:1pt solid #000!important;
+    min-height:10pt!important;
+    line-height:1.15!important;
+    padding:0!important;
+    margin:0!important;
+    background:#fff!important;
+  }
+  #print-root label.ci.origem-print-checked{
+    font-weight:900!important;
+    color:#000!important;
+    text-decoration:underline!important;
+  }
+  #print-root label.ci.origem-print-checked::after{
+    content:"  ✓"!important;
+    font-family:Arial,Helvetica,sans-serif!important;
+    font-size:7pt!important;
+    font-weight:900!important;
+    color:#000!important;
+  }
+  #print-root label.ci.origem-print-checked input{
+    border:1pt solid #000!important;
+    background:#fff!important;
+  }
+  #print-root label.ci.origem-print-checked input::after{
+    content:""!important;
+    display:block!important;
+    width:3.5pt!important;
+    height:3.5pt!important;
+    background:#000!important;
+    border-radius:50%!important;
+    position:absolute!important;
+    top:50%!important;
+    left:50%!important;
+    transform:translate(-50%,-50%)!important;
+  }
+}
+
 </style>
 
 
@@ -5029,26 +5090,38 @@ document.addEventListener('DOMContentLoaded', function () {
     var cpfValor = val('cpf');
     var nomePrint = cloneRoot.querySelector('#pn, #print-nome');
     var cpfPrint = cloneRoot.querySelector('#pc, #print-cpf');
-    if(nomePrint) nomePrint.textContent = nomeValor;
-    if(cpfPrint) cpfPrint.textContent = cpfValor;
+    if(nomePrint){ nomePrint.textContent = nomeValor; nomePrint.classList.add('finput-print'); }
+    if(cpfPrint){ cpfPrint.textContent = cpfValor; cpfPrint.classList.add('finput-print'); }
 
     ['#inp-nome', '#cpf'].forEach(function(sel){
       var el = cloneRoot.querySelector(sel);
       if(el){
+        el.classList.add('print-hide-field');
         el.style.setProperty('display','none','important');
         el.style.setProperty('visibility','hidden','important');
         el.style.setProperty('height','0','important');
         el.style.setProperty('min-height','0','important');
+        el.style.setProperty('max-height','0','important');
         el.style.setProperty('padding','0','important');
         el.style.setProperty('margin','0','important');
+        el.style.setProperty('border','0','important');
         el.setAttribute('aria-hidden','true');
       }
     });
 
     /* Marca visualmente a Origem selecionada mesmo em navegadores que não imprimem radio/checked direito */
-    Array.prototype.forEach.call(cloneRoot.querySelectorAll('#cr-origem label.ci'), function(label){
+    var originalOrigem = originalRoot.querySelectorAll('#cr-origem label.ci');
+    var cloneOrigem = cloneRoot.querySelectorAll('#cr-origem label.ci');
+    Array.prototype.forEach.call(cloneOrigem, function(label, idx){
       var input = label.querySelector('input');
-      if(input && input.checked) label.classList.add('origem-print-checked');
+      var originalInput = originalOrigem[idx] ? originalOrigem[idx].querySelector('input') : null;
+      var marcado = !!((originalInput && originalInput.checked) || (input && input.checked));
+      if(input){
+        input.checked = marcado;
+        if(marcado) input.setAttribute('checked','checked');
+        else input.removeAttribute('checked');
+      }
+      if(marcado) label.classList.add('origem-print-checked');
       else label.classList.remove('origem-print-checked');
     });
   }
