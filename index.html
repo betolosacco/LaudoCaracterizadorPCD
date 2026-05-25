@@ -2262,6 +2262,35 @@ html body .def-grid .def-box > .def-box-title:has(> input[type="checkbox"]:check
   }
 }
 
+
+
+/* PATCH GitHub v37 — origem da deficiência marcada na impressão por símbolo fixo */
+@media print{
+  #print-root .origem-print-symbol{
+    display:inline!important;
+    visibility:visible!important;
+    font-family:Arial,Helvetica,sans-serif!important;
+    font-size:8pt!important;
+    font-weight:900!important;
+    color:#000!important;
+    margin-right:2pt!important;
+  }
+  #print-root .origem-print-native-hidden{
+    display:none!important;
+    visibility:hidden!important;
+    width:0!important;
+    height:0!important;
+    margin:0!important;
+    padding:0!important;
+    border:0!important;
+  }
+  #print-root label.ci.origem-print-checked{
+    font-weight:900!important;
+    color:#000!important;
+    text-decoration:none!important;
+  }
+}
+
 </style>
 
 
@@ -5123,6 +5152,21 @@ document.addEventListener('DOMContentLoaded', function () {
       }
       if(marcado) label.classList.add('origem-print-checked');
       else label.classList.remove('origem-print-checked');
+
+      /* PATCH GitHub v37 — fallback visual real para impressão:
+         não depende do navegador imprimir o input radio/checkbox marcado. */
+      var oldSym = label.querySelector('.origem-print-symbol');
+      if(oldSym && oldSym.parentNode) oldSym.parentNode.removeChild(oldSym);
+      var sym = document.createElement('span');
+      sym.className = 'origem-print-symbol';
+      sym.textContent = marcado ? '● ' : '○ ';
+      label.insertBefore(sym, label.firstChild);
+      if(input){
+        input.classList.add('origem-print-native-hidden');
+        input.style.setProperty('display','none','important');
+        input.style.setProperty('visibility','hidden','important');
+        input.setAttribute('aria-hidden','true');
+      }
     });
   }
 
@@ -5208,6 +5252,250 @@ document.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('afterprint', limparPrintRootV34);
 })();
 
+
+
+/* ════════════════════════════════════════════════════════
+   PATCH v40 — GitHub Pages / Safari
+   1) Modelos salvos com storage robusto e mensagens claras.
+   2) Origem da deficiência impressa como texto fixo (● / ○), sem depender de radio button.
+════════════════════════════════════════════════════════ */
+(function(){
+  'use strict';
+  var STORAGE_KEY = 'brmed-modelos-v2';
+  var LEGACY_KEY = 'brmed-modelos';
+  var memoriaModelos = null;
+
+  function storageOk(){
+    try{
+      var k='__brmed_test__';
+      window.localStorage.setItem(k,'1');
+      window.localStorage.removeItem(k);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  function lerStorage(){
+    try{
+      var raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_KEY);
+      if(!raw) return {};
+      var obj = JSON.parse(raw);
+      return (obj && typeof obj === 'object' && !Array.isArray(obj)) ? obj : {};
+    }catch(e){ return {}; }
+  }
+
+  function gravarStorage(obj){
+    try{
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(obj || {}));
+      window.localStorage.setItem(LEGACY_KEY, JSON.stringify(obj || {}));
+      return true;
+    }catch(e){
+      memoriaModelos = obj || {};
+      return false;
+    }
+  }
+
+  function getTextoLabel(label){
+    if(!label) return '';
+    return (label.textContent || '').replace(/^[●○✓◉\s]+/,'').trim();
+  }
+
+  function garantirDB(){
+    if(typeof modelosDB !== 'object' || modelosDB === null) window.modelosDB = {};
+    if(memoriaModelos) modelosDB = memoriaModelos;
+  }
+
+  window._carregarModelosStorage = function(){
+    garantirDB();
+    modelosDB = memoriaModelos || lerStorage();
+    window.modelosDB = modelosDB;
+    if(typeof _atualizarSelectModelos === 'function') _atualizarSelectModelos();
+  };
+
+  window._salvarModelosStorage = function(){
+    garantirDB();
+    var ok = gravarStorage(modelosDB);
+    if(!ok){
+      console.warn('Modelos salvos apenas temporariamente: localStorage indisponível neste navegador.');
+    }
+    return ok;
+  };
+
+  window._coletarEstado = function(){
+    var cids = [];
+    document.querySelectorAll('.cid-card').forEach(function(card){
+      var inp  = card.querySelector('.cid-input');
+      var desc = card.querySelector('.cid-desc');
+      if(inp && inp.value.trim()) cids.push({ code: inp.value.trim(), desc: desc ? desc.textContent : '' });
+    });
+
+    var origens = [];
+    document.querySelectorAll('#cr-origem label.ci').forEach(function(label, idx){
+      var input = label.querySelector('input');
+      if(input && input.checked){
+        origens.push({ index: idx, texto: getTextoLabel(label) });
+      }
+    });
+
+    var deficiencias = {};
+    ['box-fisica','box-auditiva','box-visual','box-intelectual','box-mental','box-multipla'].forEach(function(boxId){
+      var cb = document.querySelector('#' + boxId + ' .def-box-title input[type=checkbox]');
+      if(cb && cb.checked){
+        var subs = [];
+        document.querySelectorAll('.cb-sub[data-parent="' + boxId + '"]:checked').forEach(function(s){
+          subs.push((s.parentElement.textContent || '').trim());
+        });
+        deficiencias[boxId] = subs;
+      }
+    });
+
+    return {
+      cids: cids,
+      origens: origens,
+      deficiencias: deficiencias,
+      multipla: !!(document.getElementById('cb-multipla') && document.getElementById('cb-multipla').checked),
+      imp: document.getElementById('ta-imp') ? document.getElementById('ta-imp').value : '',
+      lim: document.getElementById('ta-lim') ? document.getElementById('ta-lim').value : ''
+    };
+  };
+
+  window._aplicarEstado = function(estado){
+    estado = estado || {};
+    if(typeof initCIDs === 'function') initCIDs();
+
+    if(estado.cids && estado.cids.length > 0){
+      var list = document.getElementById('cid-list');
+      var firstInp = list ? list.querySelector('.cid-input') : null;
+      if(firstInp && estado.cids[0]){
+        firstInp.value = estado.cids[0].code || '';
+        var firstCard = list.querySelector('.cid-card');
+        if(firstCard && typeof buscarCID === 'function') buscarCID(firstInp.value, firstCard.id);
+      }
+      for(var i=1; i<estado.cids.length; i++){
+        if(typeof adicionarCID === 'function') adicionarCID();
+        var cards = list.querySelectorAll('.cid-card');
+        var lastCard = cards[cards.length - 1];
+        var lastInp  = lastCard ? lastCard.querySelector('.cid-input') : null;
+        if(lastInp){
+          lastInp.value = estado.cids[i].code || '';
+          if(typeof buscarCID === 'function') buscarCID(lastInp.value, lastCard.id);
+        }
+      }
+    }
+
+    if(estado.origens){
+      var labels = document.querySelectorAll('#cr-origem label.ci');
+      labels.forEach(function(label, idx){
+        var input = label.querySelector('input');
+        if(!input) return;
+        var texto = getTextoLabel(label);
+        var marcado = estado.origens.some(function(o){
+          if(typeof o === 'string') return o === texto;
+          return (o.index === idx) || (o.texto === texto);
+        });
+        input.checked = marcado;
+      });
+    }
+
+    if(estado.deficiencias){
+      Object.entries(estado.deficiencias).forEach(function(pair){
+        var boxId = pair[0], subs = pair[1] || [];
+        var cb = document.querySelector('#' + boxId + ' .def-box-title input[type=checkbox]');
+        if(cb){ cb.checked = true; if(typeof onPrinc === 'function') onPrinc(cb, boxId); }
+        subs.forEach(function(subText){
+          document.querySelectorAll('.cb-sub[data-parent="' + boxId + '"]').forEach(function(s){
+            if((s.parentElement.textContent || '').trim() === subText) s.checked = true;
+          });
+        });
+      });
+    }
+
+    if(estado.multipla){
+      var cbM = document.getElementById('cb-multipla');
+      if(cbM){ cbM.checked = true; if(typeof onMultipla === 'function') onMultipla(cbM); }
+    }
+
+    var taImp = document.getElementById('ta-imp');
+    var taLim = document.getElementById('ta-lim');
+    if(taImp){ taImp.value = estado.imp || ''; if(typeof onTaInput === 'function') onTaInput(taImp, 'imp'); }
+    if(taLim){ taLim.value = estado.lim || ''; if(typeof onTaInput === 'function') onTaInput(taLim, 'lim'); }
+  };
+
+  window.salvarModelo = function(){
+    garantirDB();
+    var inputNome = document.getElementById('mod-nome-input');
+    var nome = inputNome ? inputNome.value.trim() : '';
+    if(!nome){ alert('Informe um nome para o modelo.'); return; }
+    var id = 'mod_' + Date.now();
+    modelosDB[id] = { nome: nome, estado: window._coletarEstado(), criadoEm: new Date().toISOString() };
+    window.modelosDB = modelosDB;
+    var persistiu = window._salvarModelosStorage();
+    if(typeof _atualizarSelectModelos === 'function') _atualizarSelectModelos();
+    if(typeof _renderListaModelos === 'function') _renderListaModelos();
+    if(inputNome) inputNome.value = '';
+    alert('Modelo "' + nome + '" salvo!' + (persistiu ? '' : '\n\nAtenção: o navegador bloqueou o salvamento permanente. Se estiver no modo privado/anônimo ou com cookies bloqueados, o modelo pode sumir ao fechar a aba.'));
+  };
+
+  window.carregarModelo = function(id){
+    garantirDB();
+    if(!id || !modelosDB[id]) return;
+    if(typeof limparCampos === 'function') limparCampos();
+    window._aplicarEstado(modelosDB[id].estado);
+    var sel = document.getElementById('modelo-select');
+    if(sel) sel.value = '';
+  };
+
+  function corrigirOrigemNoPrintRoot(){
+    var root = document.getElementById('print-root');
+    if(!root) return;
+    var originalLabels = document.querySelectorAll('body > .page-wrap #cr-origem label.ci');
+    var cloneLabels = root.querySelectorAll('#cr-origem label.ci');
+    cloneLabels.forEach(function(label, idx){
+      var originalInput = originalLabels[idx] ? originalLabels[idx].querySelector('input') : null;
+      var marcado = !!(originalInput && originalInput.checked);
+      var texto = originalLabels[idx] ? getTextoLabel(originalLabels[idx]) : getTextoLabel(label);
+      label.innerHTML = '';
+      var span = document.createElement('span');
+      span.textContent = (marcado ? '● ' : '○ ') + texto;
+      span.style.fontWeight = marcado ? '900' : '400';
+      span.style.color = '#000';
+      label.appendChild(span);
+      if(marcado) label.classList.add('origem-print-checked'); else label.classList.remove('origem-print-checked');
+    });
+  }
+
+  var oldGerar = window._gerarPrintRootV34;
+  window._gerarPrintRootV34 = function(){
+    var ok = oldGerar ? oldGerar() : true;
+    corrigirOrigemNoPrintRoot();
+    return ok;
+  };
+
+  window.addEventListener('beforeprint', function(){ setTimeout(corrigirOrigemNoPrintRoot, 0); });
+
+  var oldAcao = window.acaoComValidacao;
+  window.acaoComValidacao = function(acao){
+    if(acao !== 'print'){
+      return oldAcao ? oldAcao(acao) : undefined;
+    }
+    if(typeof limparTodosErros === 'function') limparTodosErros();
+    var erros = (typeof validar === 'function') ? validar() : [];
+    if(erros && erros.length){ if(typeof mostrarErros === 'function') mostrarErros(erros); return; }
+    if(typeof atualizarDataDisplay === 'function') atualizarDataDisplay();
+    if(window._gerarPrintRootV34) window._gerarPrintRootV34();
+    corrigirOrigemNoPrintRoot();
+    var aviso = document.getElementById('aviso-chrome');
+    if(aviso) aviso.classList.add('show');
+    setTimeout(function(){
+      corrigirOrigemNoPrintRoot();
+      window.print();
+      setTimeout(function(){ if(aviso) aviso.classList.remove('show'); }, 500);
+    },150);
+  };
+
+  document.addEventListener('DOMContentLoaded', function(){
+    window._carregarModelosStorage();
+  });
+})();
 </script>
 </body>
 </html>
